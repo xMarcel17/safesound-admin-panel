@@ -1,1 +1,0 @@
-# safesound-admin-panel

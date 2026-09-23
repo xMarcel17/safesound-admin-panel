@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Administratora - Zgłoszenia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        topWave: '#21422A',
+                        bottomDark: '#09140C',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Glassmorphism effects */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        /* Hide scrollbar but keep functionality */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-b from-topWave to-bottomDark min-h-screen text-white font-sans antialiased">
+
+    <!-- Kontener główny aplikacji -->
+    <div class="max-w-5xl mx-auto p-6 min-h-screen flex flex-col">
+        
+        <!-- Nagłówek (Logo i przycisk wylogowania) -->
+        <div class="flex justify-between items-center mb-10 mt-4">
+            <div class="bg-white/90 p-3 rounded-xl shadow-lg border border-white/20">
+                <!-- Podmieniłem tło pod logo na jasne, aby czarne linie były widoczne -->
+                <img src="logo.png" alt="Safe Sound Logo" class="h-12 object-contain">
+            </div>
+            <button id="logout-btn" onclick="logout()" class="hidden glass-panel px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/10 transition-colors">
+                Wyloguj się
+            </button>
+        </div>
+
+        <!-- ================= EKRAN LOGOWANIA ================= -->
+        <div id="login-view" class="flex-1 flex items-center justify-center">
+            <div class="glass-panel p-8 rounded-2xl w-full max-w-md">
+                <h2 class="text-2xl font-bold mb-6 text-center">Logowanie do panelu</h2>
+                <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Nazwa użytkownika (Admin)</label>
+                        <input type="text" id="username" required 
+                               class="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Hasło</label>
+                        <input type="password" id="password" required 
+                               class="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    </div>
+                    <div id="login-error" class="hidden text-red-400 text-sm text-center font-medium bg-red-900/30 p-2 rounded">
+                        Błędny login lub hasło.
+                    </div>
+                    <button type="submit" 
+                            class="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors mt-4">
+                        Zaloguj się
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- ================= EKRAN LISTY ZGŁOSZEŃ ================= -->
+        <div id="dashboard-view" class="hidden flex-1 flex flex-col">
+            <h1 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                <span>Lista zgłoszeń</span>
+                <span id="ticket-count" class="text-sm bg-white/20 px-3 py-1 rounded-full">0</span>
+            </h1>
+            
+            <div id="tickets-container" class="grid grid-cols-1 gap-4 overflow-y-auto no-scrollbar pb-10">
+
+            </div>
+        </div>
+
+        <!-- ================= EKRAN SZCZEGÓŁÓW ZGŁOSZENIA ================= -->
+        <div id="ticket-detail-view" class="hidden flex-1 flex flex-col">
+            <button onclick="showView('dashboard')" class="self-start flex items-center gap-2 text-gray-300 hover:text-white mb-6 bg-white/5 px-4 py-2 rounded-lg transition-colors">
+                <span>&larr; Wróć do listy</span>
+            </button>
+
+            <div id="ticket-detail-content" class="glass-panel p-8 rounded-2xl">
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ================= LOGIKA APLIKACJI (JS) ================= -->
+    <script>
+        // TUTAJ WPISZ ADRES SWOJEGO SERWERA
+        const API_BASE_URL = 'http://192.168.1.2:8000'; 
+        
+        let allTickets = [];
+
+        // Inicjalizacja przy starcie
+        window.onload = () => {
+            const token = localStorage.getItem('admin_token');
+            if (token) {
+                showView('dashboard');
+                fetchTickets();
+            } else {
+                showView('login');
+            }
+        };
+
+        // Zarządzanie widokami
+        function showView(viewName) {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('dashboard-view').classList.add('hidden');
+            document.getElementById('ticket-detail-view').classList.add('hidden');
+            
+            const logoutBtn = document.getElementById('logout-btn');
+            
+            if (viewName === 'login') {
+                document.getElementById('login-view').classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+            } else if (viewName === 'dashboard') {
+                document.getElementById('dashboard-view').classList.remove('hidden');
+                logoutBtn.classList.remove('hidden');
+                fetchTickets(); 
+            } else if (viewName === 'ticket-detail') {
+                document.getElementById('ticket-detail-view').classList.remove('hidden');
+                logoutBtn.classList.remove('hidden');
+            }
+        }
+
+        // Logowanie
+        async function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            const errorDiv = document.getElementById('login-error');
+            
+            errorDiv.classList.add('hidden');
+
+            const formData = new URLSearchParams();
+            formData.append('username', u);
+            formData.append('password', p);
+            formData.append('grant_type', 'password');
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData.toString()
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('admin_token', data.access_token);
+                    document.getElementById('password').value = '';
+                    showView('dashboard');
+                } else {
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Błąd sieci:", error);
+                errorDiv.innerText = "Brak połączenia z serwerem.";
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        // Wylogowanie
+        function logout() {
+            localStorage.removeItem('admin_token');
+            showView('login');
+        }
+
+        // Pobieranie zgłoszeń
+        async function fetchTickets() {
+            const token = localStorage.getItem('admin_token');
+            if(!token) return logout();
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/admin/tickets`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (res.status === 401 || res.status === 403) return logout();
+
+                if (res.ok) {
+                    allTickets = await res.json();
+                    renderTicketsList();
+                }
+            } catch (error) {
+                console.error("Błąd pobierania biletów:", error);
+            }
+        }
+
+        // Pomocnicza funkcja do kolorów statusów
+        function getStatusColor(status) {
+            switch(status) {
+                case 'Nowe': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+                case 'W toku': return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+                case 'Zakończone': return 'bg-green-500/20 text-green-300 border-green-500/30';
+                default: return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+            }
+        }
+
+        // Renderowanie listy
+        function renderTicketsList() {
+            const container = document.getElementById('tickets-container');
+            document.getElementById('ticket-count').innerText = allTickets.length;
+            container.innerHTML = '';
+
+            if (allTickets.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-10 glass-panel rounded-xl">Brak zgłoszeń w systemie.</div>';
+                return;
+            }
+
+            allTickets.forEach(ticket => {
+                const date = new Date(ticket.created_at).toLocaleString('pl-PL');
+                const statusStyles = getStatusColor(ticket.status);
+                
+                const card = document.createElement('div');
+                card.className = "glass-panel p-5 rounded-xl cursor-pointer hover:bg-white/10 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-white/5 hover:border-white/20";
+                card.onclick = () => openTicket(ticket.id);
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-center gap-3 mb-2">
+                            <h3 class="text-lg font-bold">${ticket.title}</h3>
+                            <span class="text-xs text-gray-400">#${ticket.id}</span>
+                        </div>
+                        <p class="text-sm text-gray-400 line-clamp-1 max-w-2xl">${ticket.description}</p>
+                    </div>
+                    <div class="flex items-center gap-4 sm:flex-col sm:items-end">
+                        <span class="px-3 py-1 rounded-full text-xs font-semibold border ${statusStyles}">
+                            ${ticket.status}
+                        </span>
+                        <span class="text-xs text-gray-400">${date}</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Otwieranie szczegółów
+        function openTicket(id) {
+            const ticket = allTickets.find(t => t.id === id);
+            if (!ticket) return;
+
+            const date = new Date(ticket.created_at).toLocaleString('pl-PL');
+            const statusStyles = getStatusColor(ticket.status);
+
+            const content = document.getElementById('ticket-detail-content');
+            content.innerHTML = `
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 pb-6 border-b border-white/10">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-2">${ticket.title}</h2>
+                        <div class="flex gap-4 text-sm text-gray-400">
+                            <span>Utworzono: ${date}</span>
+                            <span>Użytkownik ID: <strong class="text-white">${ticket.user_id}</strong></span>
+                            <span>Powiadomienie ID: <strong class="text-white">${ticket.notification_id}</strong></span>
+                        </div>
+                    </div>
+                    
+                    <!-- Selektor statusu, który wygląda jak odznaka -->
+                    <div class="relative">
+                        <select onchange="updateTicketStatus(${ticket.id}, this.value)" 
+                                class="appearance-none px-4 py-2 pr-8 rounded-full text-sm font-bold border cursor-pointer focus:outline-none ${statusStyles}"
+                                style="background-color: rgba(0,0,0,0.5);">
+                            <option value="Nowe" ${ticket.status === 'Nowe' ? 'selected' : ''} class="bg-gray-900 text-white">Nowe</option>
+                            <option value="W toku" ${ticket.status === 'W toku' ? 'selected' : ''} class="bg-gray-900 text-white">W toku</option>
+                            <option value="Zakończone" ${ticket.status === 'Zakończone' ? 'selected' : ''} class="bg-gray-900 text-white">Zakończone</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-current opacity-70">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-black/20 p-6 rounded-xl border border-white/5">
+                    <h4 class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-3">Treść zgłoszenia</h4>
+                    <p class="whitespace-pre-wrap text-gray-200 leading-relaxed text-lg">${ticket.description}</p>
+                </div>
+            `;
+            
+            showView('ticket-detail');
+        }
+
+        // Aktualizacja statusu
+        async function updateTicketStatus(ticketId, newStatus) {
+            const token = localStorage.getItem('admin_token');
+            if(!token) return;
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/admin/tickets/${ticketId}/status`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ new_status: newStatus })
+                });
+
+                if (res.ok) {
+                    // Zaktualizuj lokalną tablicę, aby nie pobierać wszystkiego od nowa
+                    const tIndex = allTickets.findIndex(t => t.id === ticketId);
+                    if(tIndex !== -1) {
+                        allTickets[tIndex].status = newStatus;
+                        // Odśwież widok szczegółów (zaktualizuje kolory selektora)
+                        openTicket(ticketId);
+                    }
+                } else {
+                    alert("Nie udało się zaktualizować statusu.");
+                }
+            } catch (error) {
+                console.error("Błąd aktualizacji statusu:", error);
+            }
+        }
+    </script>
+</body>
+</html>
